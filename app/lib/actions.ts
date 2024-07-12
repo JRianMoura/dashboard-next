@@ -17,9 +17,9 @@ const CreateInvoice = FormSchema.omit({ id: true, date: true });
 const UpdateInvoice = FormSchema.omit({ id: true, date: true });
 
 
-export async function deleteInvoice(id:string) {
-  await sql`DELETE FROM invoices WHERE id = ${id}`;
-  revalidatePath('/dashboard/invoices')
+export async function deleteInvoice(id: string) {
+  throw new Error('Falha ao deletar fatura.')
+  
 }
 
 export async function updateInvoice(id: string, formData: FormData) {
@@ -30,11 +30,17 @@ export async function updateInvoice(id: string, formData: FormData) {
   });
   const amountInCents = amount * 100;
 
+  try{
   await sql`
   UPDATE invoices
   SET customer_id = ${customerId}, amount = ${amountInCents}, status = ${status}
   WHERE id = ${id}
   `;
+  } catch (error) {
+    return {
+      message: "Erro no banco de dados: Falha ao atualizar fatura."
+    }
+  }
 
   revalidatePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
@@ -49,10 +55,15 @@ export async function createInvoice(formData: FormData) {
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split('T')[0];
 
+  try{
   await sql`
     INSERT INTO invoices (customer_id, amount, status, date)
     VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
-  `
+  `} catch (error) {
+    return {
+      message: "Erro no banco de dados: Falha para criar fatura."
+    }
+  }
 
   revalidatePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
