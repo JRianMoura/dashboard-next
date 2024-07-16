@@ -4,7 +4,16 @@ import { sql } from "@vercel/postgres";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { signIn } from "@/auth";
-import { AuthError	 } from "next-auth";
+import { AuthError } from "next-auth";
+
+export type State = {
+  errors?: {
+    customerId?: string[];
+    amount?: string[];
+    status?: string[];
+  };
+  message?: string | null;
+};
 
 export async function authenticate(prevState: string | undefined, formData: FormData) {
   try {
@@ -24,9 +33,13 @@ export async function authenticate(prevState: string | undefined, formData: Form
 
 const FormSchema = z.object({
   id: z.string(),
-  customerId: z.string(),
-  amount: z.coerce.number(),
-  status: z.enum(['pending', 'paid']),
+  customerId: z.string({
+    invalid_type_error: 'Selecione um cliente.'
+  }),
+  amount: z.coerce.number().gt(0, {message: 'Insira um valor maior que R$ 0'}),
+  status: z.enum(['pending', 'paid'], {
+    invalid_type_error: 'Selecione o status da fatura.'
+  }),
   date: z.string(),
 });
 
@@ -63,25 +76,41 @@ export async function updateInvoice(id: string, formData: FormData) {
   redirect('/dashboard/invoices');
 }
 
-export async function createInvoice(formData: FormData) {
-  const { customerId, amount, status} = CreateInvoice.parse({
+export async function createInvoice(prevState: State, formData: FormData) {
+  // Validate form using Zod
+  const validatedFields = CreateInvoice.safeParse({
     customerId: formData.get('customerId'),
     amount: formData.get('amount'),
     status: formData.get('status'),
   });
+ 
+  // If form validation fails, return errors early. Otherwise, continue.
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: 'Missing Fields. Failed to Create Invoice.',
+    };
+  }
+ 
+  // Prepare data for insertion into the database
+  const { customerId, amount, status } = validatedFields.data;
   const amountInCents = amount * 100;
   const date = new Date().toISOString().split('T')[0];
-
-  try{
-  await sql`
-    INSERT INTO invoices (customer_id, amount, status, date)
-    VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
-  `} catch (error) {
+ 
+  // Insert data into the database
+  try {
+    await sql`
+      INSERT INTO invoices (customer_id, amount, status, date)
+      VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
+    `;
+  } catch (error) {
+    // If a database error occurs, return a more specific error.
     return {
-      message: "Erro no banco de dados: Falha para criar fatura."
-    }
+      message: 'Database Error: Failed to Create Invoice.',
+    };
   }
-
+ 
+  // Revalidate the cache for the invoices page and redirect the user.
   revalidatePath('/dashboard/invoices');
   redirect('/dashboard/invoices');
 }
